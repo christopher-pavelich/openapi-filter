@@ -162,10 +162,15 @@ func (pc *PathConfig) DecodeMapstructure(from interface{}) error {
 			if key.Kind() == reflect.String {
 				switch key.String() {
 				case "methods":
-					if value.Kind() == reflect.Slice || value.Kind() == reflect.Array {
-						methods := make([]string, value.Len())
-						for i := 0; i < value.Len(); i++ {
-							elem := value.Index(i)
+					// Handle interface{} wrapping
+					actualValue := value
+					if value.Kind() == reflect.Interface {
+						actualValue = reflect.ValueOf(value.Interface())
+					}
+					if actualValue.Kind() == reflect.Slice || actualValue.Kind() == reflect.Array {
+						methods := make([]string, actualValue.Len())
+						for i := 0; i < actualValue.Len(); i++ {
+							elem := actualValue.Index(i)
 							if elem.Kind() == reflect.String {
 								methods[i] = elem.String()
 							} else if elem.Kind() == reflect.Interface {
@@ -180,7 +185,7 @@ func (pc *PathConfig) DecodeMapstructure(from interface{}) error {
 						}
 						pc.Methods = methods
 					} else {
-						return fmt.Errorf("methods field must be an array, got %v", value.Kind())
+						return fmt.Errorf("methods field must be an array, got %v", actualValue.Kind())
 					}
 				case "preserveServers":
 					if value.Kind() == reflect.Bool {

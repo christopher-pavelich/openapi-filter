@@ -39,21 +39,16 @@ func initConfig[C any](configPath string) (*C, error) {
 	}
 
 	var cfg C
-	// Configure mapstructure hook for PathConfig decoding
-	decoderConfig := &mapstructure.DecoderConfig{
-		Result:           &cfg,
-		DecodeHook:      pathConfigDecodeHook,
-		WeaklyTypedInput: true,
+	// Use koanf's Unmarshal with custom mapstructure hook
+	unmarshalOpts := koanf.UnmarshalConf{
+		DecoderConfig: &mapstructure.DecoderConfig{
+			Result:           &cfg,
+			DecodeHook:       pathConfigDecodeHook,
+			WeaklyTypedInput: true,
+		},
 	}
-	decoder, err := mapstructure.NewDecoder(decoderConfig)
-	if err != nil {
-		return nil, fmt.Errorf("mapstructure.NewDecoder: %w", err)
-	}
-
-	// Get raw config data
-	raw := k.Raw()
-	if err := decoder.Decode(raw); err != nil {
-		return nil, fmt.Errorf("decoder.Decode: %w", err)
+	if err := k.UnmarshalWithConf("", &cfg, unmarshalOpts); err != nil {
+		return nil, fmt.Errorf("k.UnmarshalWithConf: %w", err)
 	}
 	return &cfg, nil
 }
