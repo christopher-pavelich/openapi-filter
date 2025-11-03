@@ -63,7 +63,7 @@ func (oaf *OpenAPISpecFilter) Filter(doc *openapi3.T) (filtered *openapi3.T, err
 // according to the allowed methods. It also collects all references used in the
 // filtered paths.
 func (oaf *OpenAPISpecFilter) filterPaths() {
-	for path, methods := range oaf.cfg.Paths {
+	for path, pathConfig := range oaf.cfg.Paths {
 		pathItem := oaf.doc.Paths.Find(path)
 		if pathItem == nil {
 			oaf.logger.Warn("path not found in spec", zap.String("path", path))
@@ -71,7 +71,7 @@ func (oaf *OpenAPISpecFilter) filterPaths() {
 		}
 
 		newPathItem := &openapi3.PathItem{}
-		for _, method := range methods {
+		for _, method := range pathConfig.Methods {
 			op := oaf.getOperation(pathItem, method, path)
 			if op == nil {
 				oaf.logger.Warn("method not exists for specified path",
@@ -83,6 +83,15 @@ func (oaf *OpenAPISpecFilter) filterPaths() {
 				continue
 			}
 			oaf.collector.CollectOperation(op)
+		}
+
+		// Preserve path-level servers if configured
+		preserveServers := pathConfig.PreserveServers
+		if !preserveServers {
+			preserveServers = oaf.cfg.PreservePathServers
+		}
+		if preserveServers && pathItem.Servers != nil && len(pathItem.Servers) > 0 {
+			newPathItem.Servers = pathItem.Servers
 		}
 
 		oaf.filtered.Paths.Set(path, newPathItem)

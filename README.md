@@ -1,4 +1,5 @@
 # openapi-filter
+## fork that allows preserving path level server definitions
 > Easily filter an OpenAPI spec to include only specific paths, methods, or components
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/zguydev/openapi-filter.svg)](https://pkg.go.dev/github.com/zguydev/openapi-filter)
@@ -25,6 +26,7 @@ go install github.com/zguydev/openapi-filter@latest
     - Global security requirements (`security`)
     - Tag definitions (`tags`)
     - External documentation objects (`externalDocs`)
+- **Preserve Path-Level Servers**: optionally preserve path-level `servers` arrays independently of root-level servers configuration.
 - **Easy Filter Configuration**: define your filtering rules in a simple config file: `YAML`, `TOML` and `JSON` formats are supported!
 
 ### Filter Configuration
@@ -43,6 +45,9 @@ x-openapi-filter:
 
 # Keep or discard server information (default: false)
 servers: true
+# Preserve path-level servers globally (default: false)
+# This is independent of the root-level 'servers' setting
+preservePathServers: false
 # Keep or discard global security definitions (default: false)
 security: true
 # Keep or discard tag definitions (default: false)
@@ -53,9 +58,17 @@ externalDocs: true
 # Specify paths and methods to keep.
 # If a path is listed, only the specified methods are kept.
 paths:
+  # Simple format (backward compatible): array of methods
   /pets: [ post, put ]
   /pet/{petId}/uploadImage: [ post ]
   /user/login: [ get ]
+  
+  # Advanced format: object with methods and preserveServers override
+  # This allows per-path control over server preservation
+  /api/advanced-path:
+    methods: [ get, post, delete ]
+    preserveServers: true  # Override global preservePathServers for this path
+  
   # Paths not listed here will be removed.
 
 # Specify components to keep.

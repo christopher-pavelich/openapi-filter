@@ -1,4 +1,5 @@
 servers = false
+preservePathServers = true  # Preserve path-level servers globally (default: false)
 security = true
 tags = true
 externalDocs = false
@@ -10,8 +11,14 @@ level = "debug"
 external_refs_allowed = false
 
 [paths]
+# Simple format (backward compatible): array of methods
 "/api/example" = [ "get", "post" ]
 "/api/some-another-example" = [ "put" ]
+
+# Advanced format: table with methods and preserveServers override
+[paths."/api/advanced-path"]
+methods = [ "get", "post", "delete" ]
+preserveServers = true  # Override global preservePathServers for this path
 
 [components]
 securitySchemes = [ "ApiKeyAuth" ]

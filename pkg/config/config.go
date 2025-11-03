@@ -3,6 +3,12 @@
 // tool-specific settings.
 package config
 
+import (
+	"encoding/json"
+	"fmt"
+	"reflect"
+)
+
 // Config represents the root configuration structure for the OpenAPI filter tool.
 // It combines tool-specific settings with filter configuration.
 type Config struct {
@@ -13,12 +19,13 @@ type Config struct {
 // FilterConfig defines the configuration for filtering an OpenAPI spec.
 // It specifies which parts of the spec should be included in the output.
 type FilterConfig struct {
-	Servers      bool                    `koanf:"servers"`      // Include servers section
-	Paths        map[string][]string     `koanf:"paths"`        // Map of paths to allowed HTTP methods
-	Components   *FilterComponentsConfig `koanf:"components"`   // Component filtering configuration
-	Security     bool                    `koanf:"security"`     // Include security requirements
-	Tags         bool                    `koanf:"tags"`         // Include tags
-	ExternalDocs bool                    `koanf:"externalDocs"` // Include external documentation
+	Servers            bool                    `koanf:"servers"`             // Include servers section
+	PreservePathServers bool                   `koanf:"preservePathServers"` // Preserve path-level servers (default: false)
+	Paths              map[string]PathConfig   `koanf:"paths"`               // Map of paths to path configuration
+	Components         *FilterComponentsConfig `koanf:"components"`          // Component filtering configuration
+	Security           bool                    `koanf:"security"`            // Include security requirements
+	Tags               bool                    `koanf:"tags"`                // Include tags
+	ExternalDocs       bool                    `koanf:"externalDocs"`         // Include external documentation
 }
 
 // FilterComponentsConfig specifies which components should be included in the
@@ -49,4 +56,154 @@ type LoggerConfig struct {
 // LoaderConfig defines configuration for the OpenAPI spec loader.
 type LoaderConfig struct {
 	IsExternalRefsAllowed bool `koanf:"external_refs_allowed"` // Whether to allow external references
+}
+
+// PathConfig defines configuration for a single API path.
+// It supports both simple format (array of methods) and advanced format (object with methods and preserveServers).
+type PathConfig struct {
+	Methods         []string `koanf:"methods"`         // List of HTTP methods to include
+	PreserveServers bool     `koanf:"preserveServers"` // Whether to preserve path-level servers
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling to support both simple array format
+// (backward compatible) and advanced object format.
+func (pc *PathConfig) UnmarshalJSON(data []byte) error {
+	// Try to unmarshal as array first (simple format)
+	var methods []string
+	if err := json.Unmarshal(data, &methods); err == nil {
+		pc.Methods = methods
+		pc.PreserveServers = false
+		return nil
+	}
+
+	// Try to unmarshal as object (advanced format)
+	var obj struct {
+		Methods         []string `json:"methods"`
+		PreserveServers bool     `json:"preserveServers"`
+	}
+	if err := json.Unmarshal(data, &obj); err == nil {
+		pc.Methods = obj.Methods
+		pc.PreserveServers = obj.PreserveServers
+		return nil
+	}
+
+	return fmt.Errorf("invalid path config format: expected array of strings or object with methods field")
+}
+
+// UnmarshalYAML implements custom YAML unmarshaling to support both simple array format
+// (backward compatible) and advanced object format.
+func (pc *PathConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	// Try to unmarshal as array first (simple format)
+	var methods []string
+	if err := unmarshal(&methods); err == nil {
+		pc.Methods = methods
+		pc.PreserveServers = false
+		return nil
+	}
+
+	// Try to unmarshal as object (advanced format)
+	var obj struct {
+		Methods         []string `yaml:"methods"`
+		PreserveServers bool     `yaml:"preserveServers"`
+	}
+	if err := unmarshal(&obj); err == nil {
+		pc.Methods = obj.Methods
+		pc.PreserveServers = obj.PreserveServers
+		return nil
+	}
+
+	return fmt.Errorf("invalid path config format: expected array of strings or object with methods field")
+}
+
+// DecodeMapstructure implements custom decoding for mapstructure (used by koanf).
+// This allows koanf to properly decode PathConfig from raw interface{} values.
+func (pc *PathConfig) DecodeMapstructure(from interface{}) error {
+	if from == nil {
+		return fmt.Errorf("path config cannot be nil")
+	}
+
+	val := reflect.ValueOf(from)
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
+
+	switch val.Kind() {
+	case reflect.Slice, reflect.Array:
+		// Simple format: array of strings
+		methods := make([]string, val.Len())
+		for i := 0; i < val.Len(); i++ {
+			elem := val.Index(i)
+			if elem.Kind() == reflect.String {
+				methods[i] = elem.String()
+			} else if elem.Kind() == reflect.Interface {
+				if str, ok := elem.Interface().(string); ok {
+					methods[i] = str
+				} else {
+					return fmt.Errorf("path config array element must be a string, got %T", elem.Interface())
+				}
+			} else {
+				return fmt.Errorf("path config array element must be a string, got %v", elem.Kind())
+			}
+		}
+		pc.Methods = methods
+		pc.PreserveServers = false
+		return nil
+
+	case reflect.Map:
+		// Advanced format: map with methods and optional preserveServers
+		pc.Methods = []string{}
+		pc.PreserveServers = false
+
+		iter := val.MapRange()
+		for iter.Next() {
+			key := iter.Key()
+			value := iter.Value()
+
+			if key.Kind() == reflect.String {
+				switch key.String() {
+				case "methods":
+					if value.Kind() == reflect.Slice || value.Kind() == reflect.Array {
+						methods := make([]string, value.Len())
+						for i := 0; i < value.Len(); i++ {
+							elem := value.Index(i)
+							if elem.Kind() == reflect.String {
+								methods[i] = elem.String()
+							} else if elem.Kind() == reflect.Interface {
+								if str, ok := elem.Interface().(string); ok {
+									methods[i] = str
+								} else {
+									return fmt.Errorf("methods array element must be a string, got %T", elem.Interface())
+								}
+							} else {
+								return fmt.Errorf("methods array element must be a string, got %v", elem.Kind())
+							}
+						}
+						pc.Methods = methods
+					} else {
+						return fmt.Errorf("methods field must be an array, got %v", value.Kind())
+					}
+				case "preserveServers":
+					if value.Kind() == reflect.Bool {
+						pc.PreserveServers = value.Bool()
+					} else if value.Kind() == reflect.Interface {
+						if b, ok := value.Interface().(bool); ok {
+							pc.PreserveServers = b
+						} else {
+							return fmt.Errorf("preserveServers field must be a boolean, got %T", value.Interface())
+						}
+					} else {
+						return fmt.Errorf("preserveServers field must be a boolean, got %v", value.Kind())
+					}
+				}
+			}
+		}
+
+		if len(pc.Methods) == 0 {
+			return fmt.Errorf("path config object must have a methods field")
+		}
+
+		return nil
+	}
+
+	return fmt.Errorf("invalid path config format: expected array or object, got %v", val.Kind())
 }
